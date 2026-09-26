@@ -1,5 +1,8 @@
 # =============================================================================
-# Creative Asset Pipeline: customer configuration TEMPLATE
+# Creative Asset Pipeline: SBD / DEWALT TEST project (fresh-install + teardown trials)
+# Source: SBD_SOW_Sep9_V5 (3.2, 3.4.5, A2) and SBD_Creative_Studio_TDD_v0.2 (5, 6, 9.3).
+# Moving to SBD's tenant: set create_project=false, project_id=<SBD project>,
+# org/folder, real groups under access.users.
 # -----------------------------------------------------------------------------
 # Copy this file to config/customers/<customer-id>/customer.yaml, or run
 #   cap init --customer <customer-id>
@@ -16,10 +19,10 @@
 # =============================================================================
 
 customer:
-  id: acme                      # short slug, lowercase, used in resource names (3-12 chars)
-  name: "ACME Corp"
-  brand: "ACME"                 # brand shown in prompts
-  brand_code: ACM               # 3-letter code used in Batch Run IDs: BR-20261005-ACM-001
+  id: sbd-test                  # short slug used in resource names
+  name: "Stanley Black & Decker"
+  brand: "DEWALT"
+  brand_code: DWT               # BR-20261005-DWT-001
   region_market: NA             # market/region for regional prompt variants
   language: en-US
 
@@ -29,10 +32,10 @@ environment: dev                # dev | uat | prod (suffixes names, selects defa
 # Google Cloud account, project and location
 # -----------------------------------------------------------------------------
 gcp:
-  admin_account: "you@example.com"     # Google account that runs Terraform/CLI (gcloud auth login)
+  admin_account: "kbhanoji@gmail.com"     # Google account that runs Terraform/CLI (gcloud auth login)
   create_project: true                 # true = create the project; false = use an existing one (e.g. customer landing zone)
-  project_id: "acme-cs-dev-001"        # globally unique, 6-30 chars
-  project_name: "ACME Creative Studio Dev"
+  project_id: "sbd-cs-test-kbhanoji"        # globally unique, 6-30 chars
+  project_name: "SBD Creative Studio Test"
   billing_account: "${CAP_BILLING_ACCOUNT}"  # XXXXXX-XXXXXX-XXXXXX (only needed when create_project=true)
   org_id: ""                           # set ONE of org_id / folder_id when the account belongs to an org
   folder_id: ""
@@ -41,7 +44,7 @@ gcp:
   bigquery_location: US
   labels:
     app: creative-asset-pipeline
-    customer: acme
+    customer: sbd-test
 
 # -----------------------------------------------------------------------------
 # People and access. Personas map to IAM roles (project-level unless noted).
@@ -49,7 +52,7 @@ gcp:
 # -----------------------------------------------------------------------------
 access:
   users:
-    - member: "user:you@example.com"
+    - member: "user:kbhanoji@gmail.com"
       personas: [platform_admin]
     # - member: "user:designer@example.com"
     #   personas: [creative_user]
@@ -77,7 +80,7 @@ access:
 # Storage. Final bucket name = "<bucket_prefix>-<purpose>".
 # -----------------------------------------------------------------------------
 storage:
-  bucket_prefix: "acme-cs-dev"         # must be globally unique-ish; defaults to <customer.id>-cs-<env>
+  bucket_prefix: "sbd-cs-test-kbhanoji"         # must be globally unique-ish; defaults to <customer.id>-cs-<env>
   landing_retention_days: 180
   quarantine_retention_days: 90
   lock_audit_retention: false          # true in prod after UAT: audit bucket becomes WORM
@@ -85,12 +88,12 @@ storage:
   # purposes created (don't remove; you may rename via bucket_names below):
   #   landing, config, prompts, intermediate, approved, rejected, quarantine, audit, backgrounds, assetgroups, creative-studio
   container_images_keep: 5            # Artifact Registry: keep the 5 most recent images (older than 1 day deleted); 0 = keep all
-  bucket_names: {}                     # optional overrides, e.g. {approved: "acme-final-assets"}
+  bucket_names: {}                     # optional overrides, e.g. {approved: "sbd-final-assets"}
   path_pattern: "{brand}/{category}/{subcategory}/{sku}/{batch_run_id}/{entity_id}/v{version}/{file}"
   file_pattern: "{sku}_{shot_type}_{aspect}_{resolution}_v{version}.{ext}"
 
 bigquery:
-  dataset: "acme_cs_lineage"
+  dataset: "sbd_test_cs_lineage"
 
 # -----------------------------------------------------------------------------
 # Models (Vertex AI / Gemini Enterprise Agent Platform). Verify against the
@@ -173,23 +176,23 @@ creative_studio:
   # Source code: Google's repo, or YOUR fork (bootstrap.sh and GCC's Cloud Build deploy from the fork).
   # When forking on GitHub, untick "Copy the main branch only" so develop/test exist in the fork.
   repo_url: https://github.com/GoogleCloudPlatform/gcc-creative-studio
-  fork_url: ""                        # e.g. https://github.com/<you>/gcc-creative-studio (needed for cloud_run)
+  fork_url: https://github.com/kbhanoji/gcc-creative-studio
   # GCC branch per environment: develop for development, test for UAT, main for enterprise/prod.
   branch_by_environment:
-    dev: develop
+    dev: developlocal                 # develop + scale-to-zero backend + DB autostart (see DEVELOPLOCAL.md in the fork)
     uat: test
     prod: main
   repo_ref: ""                        # optional override: branch, tag or commit SHA (pin a commit for prod, TDD ADR-10)
   gcc_environment: development        # GCC tfvars `environment`; names the media bucket <project>-cs-<this>-bucket
   gcc_env_folder: dev-infra           # GCC folder infra/environments/<name> (bootstrap.sh "environment name")
   output_bucket: ""                   # blank = <project_id>-cs-<gcc_environment>-bucket (GCC's media bucket)
-  backend_service: cstudio-be         # GCC Cloud Run service names set by GCC's bootstrap.sh
-  frontend_service: cstudio-fe
+  backend_service: cstudio-be         # GCC Cloud Run service names, as set by bootstrap.sh in
+  frontend_service: cstudio-fe        # code/gcc-creative-studio/infra/environments/dev-infra/dev-infra.tfvars
   sql_instance_prefix: creative-studio-db
   # DEVELOPMENT ONLY: stop GCC's Cloud SQL database on a schedule so you don't pay for it overnight.
   # Apply with `cap gcc schedule` after GCC is installed; `cap gcc schedule --remove` to delete.
   auto_schedule:
-    enabled: false                    # keep false for uat/prod
+    enabled: true                     # dev sandbox: stop the database every day at 5 pm
     stop_time: "17:00"                # 5 pm, 24h clock
     stop_days: [mon, tue, wed, thu, fri, sat, sun]
     start_time: ""                    # e.g. "08:00" to auto-start; blank = start with `cap gcc wake`
@@ -224,10 +227,10 @@ creative_studio:
 #                       users chat with it in Gemini Enterprise (needs GE seats; customer environments).
 # The tools, lineage and BigQuery records are identical in all three.
 # -----------------------------------------------------------------------------
-agent_runtime: gemini_enterprise
+agent_runtime: cloud_run           # personal dev account: no Gemini Enterprise; `local` also works
 
 agent:
-  display_name: "Prompt Enrichment Agent"
+  display_name: "SBD DEWALT Prompt Enrichment Agent"
   description: "Turns a short base prompt into brand-compliant, versioned image prompts with lineage IDs."
   agent_engine_location: us-central1  # agent_engine / gemini_enterprise only
   staging_bucket_purpose: config      # bucket that stages the Agent Engine package

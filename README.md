@@ -24,6 +24,42 @@ flowchart LR
   S --> BQ
 ```
 
+## Install (recommended: Google Cloud Shell)
+
+Cloud Shell avoids laptop problems: corporate TLS inspection blocking Cloud SQL, missing tools, macOS-vs-Linux binaries. It's already logged in as you.
+
+```bash
+# private repo (preferred)
+gh auth login && gh repo clone kbhanoji/creative-asset-pipeline && cd creative-asset-pipeline
+# or zip: upload creative-asset-pipeline-<version>-<sha>.zip (+ .sha256), then
+#   sha256sum -c *.sha256 && unzip creative-asset-pipeline-*.zip && cd creative-asset-pipeline
+
+cloudshell launch-tutorial installer/tutorial.md     # optional: step-by-step panel next to the terminal
+./installer/install.sh                               # guided, resumable; re-run to continue
+```
+
+`installer/install.sh` runs 9 phases:
+1. tools
+2. Python environment
+3. config (existing file or the `cap init` wizard)
+4. project + billing + Terraform state bucket + infrastructure
+5. Creative Studio
+6. lineage router
+7. dev cost-control schedules
+8. prompt agent
+9. verification
+
+For Google's three browser-only steps (GitHub connection, Firebase terms, Google sign-in), it prints the links and checks each one through the API before continuing. Creative Studio's own installer then runs non-interactively (GCC `developlocal`, `CS_*` answers; see `DEVELOPLOCAL.md` in the fork).
+
+**Teardown:** `./installer/install.sh teardown` (or `cap teardown`, `cap teardown --execute`) shows an inventory. You then type `delete <project-id>`.
+- **Project created by the installer** (label `created-by=creative-asset-pipeline`): the whole project is deleted. It's restorable for 30 days.
+- **Existing project:** only the pipeline's and Creative Studio's resources are removed.
+- **Prod:** refused unless `--allow-prod`.
+
+**Distribution:** the private GitHub repo `kbhanoji/creative-asset-pipeline` is the source. `cap package` builds `dist/creative-asset-pipeline-<version>-<sha>.zip` plus `.sha256` from HEAD for customers without GitHub access.
+
+**State:** Terraform state is in `gs://<project>-cap-tfstate` (prefix `cap/<customer>-<env>`), so any session or admin can resume. The project itself is created by `cap` (gcloud), not Terraform.
+
 ## What gets recorded (BigQuery dataset `<customer>_cs_lineage`)
 
 | Question | Where |

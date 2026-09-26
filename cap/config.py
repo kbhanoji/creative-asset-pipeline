@@ -208,10 +208,11 @@ class CreativeStudio(BaseModel):
     # vm        = GCC in Docker on a Compute Engine VM created by the pipeline Terraform (SOW 8.1 wording).
     # none      = no Creative Studio (use generation.mode = automatic).
     deployment: Literal["cloud_run", "vm", "none"] = "cloud_run"
-    gcc_environment: str = "development"        # the environment name given to GCC's bootstrap.sh
+    gcc_environment: str = "development"        # GCC tfvars `environment` (names the media bucket)
+    gcc_env_folder: str = "dev-infra"           # folder infra/environments/<name> created by GCC's bootstrap.sh
     output_bucket: str = ""                     # GCC media bucket; default {project_id}-cs-{gcc_environment}-bucket
-    backend_service: str = "cstudio-backend-dev"
-    frontend_service: str = "cstudio-frontend-dev"
+    backend_service: str = "cstudio-be"         # names GCC's bootstrap.sh gives the services
+    frontend_service: str = "cstudio-fe"
     sql_instance_prefix: str = "creative-studio-db"
     auto_schedule: AutoSchedule = AutoSchedule()
     repo_url: str = "https://github.com/GoogleCloudPlatform/gcc-creative-studio"

@@ -183,7 +183,8 @@ creative_studio:
     uat: test
     prod: main
   repo_ref: ""                        # optional override: branch, tag or commit SHA (pin a commit for prod, TDD ADR-10)
-  gcc_environment: development        # environment name you give GCC's bootstrap.sh
+  gcc_environment: development        # GCC tfvars `environment`; names the media bucket <project>-cs-<this>-bucket
+  gcc_env_folder: dev-infra           # GCC folder infra/environments/<name> (bootstrap.sh "environment name")
   output_bucket: ""                   # blank = <project_id>-cs-<gcc_environment>-bucket (GCC's media bucket)
   backend_service: cstudio-be         # GCC Cloud Run service names, as set by bootstrap.sh in
   frontend_service: cstudio-fe        # code/gcc-creative-studio/infra/environments/dev-infra/dev-infra.tfvars

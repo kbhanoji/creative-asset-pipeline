@@ -6,3 +6,4 @@ __pycache__/
 infra/terraform/.terraform/
 *.tfstate*
 .DS_Store
+dist/

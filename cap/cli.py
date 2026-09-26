@@ -313,6 +313,29 @@ def infra_destroy(config: Optional[Path] = ConfigOpt):
 
 
 # =============================================================================
+# package
+# =============================================================================
+@app.command()
+def package(out: Path = typer.Option(ROOT / "dist", help="Output folder")):
+    """Build the distributable zip (git-tracked files of HEAD) + SHA-256, for customers without GitHub access."""
+    import hashlib
+    import tomllib
+    version = tomllib.loads((ROOT / "pyproject.toml").read_text())["project"]["version"]
+    sha = _run(["git", "rev-parse", "--short", "HEAD"], cwd=ROOT, capture=True).stdout.strip()
+    if _run(["git", "status", "--porcelain"], cwd=ROOT, capture=True).stdout.strip():
+        con.print("[yellow]Uncommitted changes are NOT included (the zip is built from HEAD).[/yellow]")
+    out.mkdir(parents=True, exist_ok=True)
+    zip_path = out / f"creative-asset-pipeline-{version}-{sha}.zip"
+    _run(["git", "archive", "--format=zip", "--prefix=creative-asset-pipeline/", f"--output={zip_path}", "HEAD"], cwd=ROOT)
+    digest = hashlib.sha256(zip_path.read_bytes()).hexdigest()
+    (zip_path.with_suffix(".zip.sha256")).write_text(f"{digest}  {zip_path.name}\n")
+    con.print(f"[green]{zip_path}[/green] ({zip_path.stat().st_size // 1024} KiB)\nsha256 {digest}")
+    con.print("Cloud Shell: Upload the zip (⋮ → Upload), then: "
+              f"sha256sum -c {zip_path.name}.sha256 && unzip {zip_path.name} && cd creative-asset-pipeline && "
+              "./installer/install.sh")
+
+
+# =============================================================================
 # teardown
 # =============================================================================
 @app.command()
@@ -458,7 +481,9 @@ def _deploy_agent_cloud_run(cfg, cfg_path: Path) -> None:
     p, r = cfg.gcp.project_id, cfg.gcp.region
     img = _build_image(cfg, cfg_path, "prompt_agent", "prompt-agent")
     # browser origins used by `cap agent open --port ...`; ADK rejects other origins with 403
-    origins = ",".join(f"http://{h}:{port}" for port in (8000, 8080, 8001) for h in ("localhost", "127.0.0.1"))
+    origins = ",".join([f"http://{h}:{port}" for port in (8000, 8080, 8001) for h in ("localhost", "127.0.0.1")]
+                       # Cloud Shell Web Preview serves the proxy from https://<port>-cs-<id>.cloudshell.dev
+                       + [r"regex:^https://[0-9]+-cs-[a-z0-9-]+\.cloudshell\.dev$"])
     # "^|^" makes "|" the separator so the comma-separated origins stay one value (emails contain "@")
     env = "^|^" + "|".join([f"CAP_CONFIG={cfg_path.relative_to(ROOT)}", f"CAP_USER={cfg.gcp.admin_account}",
                             f"GOOGLE_CLOUD_PROJECT={p}", f"GOOGLE_CLOUD_LOCATION={cfg.models.model_location}",
