@@ -1,0 +1,77 @@
+{
+ "description": "Source product records/images registered per batch (Salsify/Bynder/manual).",
+ "columns": [
+  {
+   "name": "parent_asset_id",
+   "type": "STRING",
+   "mode": "REQUIRED",
+   "description": ""
+  },
+  {
+   "name": "batch_run_id",
+   "type": "STRING",
+   "mode": "NULLABLE",
+   "description": ""
+  },
+  {
+   "name": "sku",
+   "type": "STRING",
+   "mode": "REQUIRED",
+   "description": ""
+  },
+  {
+   "name": "category",
+   "type": "STRING",
+   "mode": "NULLABLE",
+   "description": ""
+  },
+  {
+   "name": "subcategory",
+   "type": "STRING",
+   "mode": "NULLABLE",
+   "description": ""
+  },
+  {
+   "name": "source_system",
+   "type": "STRING",
+   "mode": "NULLABLE",
+   "description": ""
+  },
+  {
+   "name": "source_uri",
+   "type": "STRING",
+   "mode": "NULLABLE",
+   "description": ""
+  },
+  {
+   "name": "landing_gcs_uri",
+   "type": "STRING",
+   "mode": "NULLABLE",
+   "description": ""
+  },
+  {
+   "name": "sha256",
+   "type": "STRING",
+   "mode": "NULLABLE",
+   "description": ""
+  },
+  {
+   "name": "completeness_status",
+   "type": "STRING",
+   "mode": "NULLABLE",
+   "description": ""
+  },
+  {
+   "name": "reason_codes",
+   "type": "STRING",
+   "mode": "REPEATED",
+   "description": ""
+  },
+  {
+   "name": "created_at",
+   "type": "TIMESTAMP",
+   "mode": "REQUIRED",
+   "description": ""
+  }
+ ]
+}

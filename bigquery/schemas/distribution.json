@@ -1,0 +1,59 @@
+{
+ "description": "One row per destination write attempt (Bynder/Box/GCS).",
+ "columns": [
+  {
+   "name": "asset_group_id",
+   "type": "STRING",
+   "mode": "REQUIRED",
+   "description": ""
+  },
+  {
+   "name": "version",
+   "type": "INT64",
+   "mode": "REQUIRED",
+   "description": ""
+  },
+  {
+   "name": "destination",
+   "type": "STRING",
+   "mode": "REQUIRED",
+   "description": ""
+  },
+  {
+   "name": "idempotency_key",
+   "type": "STRING",
+   "mode": "REQUIRED",
+   "description": ""
+  },
+  {
+   "name": "external_id",
+   "type": "STRING",
+   "mode": "NULLABLE",
+   "description": ""
+  },
+  {
+   "name": "path",
+   "type": "STRING",
+   "mode": "NULLABLE",
+   "description": ""
+  },
+  {
+   "name": "status",
+   "type": "STRING",
+   "mode": "NULLABLE",
+   "description": ""
+  },
+  {
+   "name": "attempts",
+   "type": "INT64",
+   "mode": "NULLABLE",
+   "description": ""
+  },
+  {
+   "name": "written_at",
+   "type": "TIMESTAMP",
+   "mode": "REQUIRED",
+   "description": ""
+  }
+ ]
+}

@@ -1,0 +1,83 @@
+{
+ "description": "One row per status change of any entity. The latest row per entity is the current status.",
+ "columns": [
+  {
+   "name": "disposition_id",
+   "type": "STRING",
+   "mode": "REQUIRED",
+   "description": ""
+  },
+  {
+   "name": "entity_type",
+   "type": "STRING",
+   "mode": "REQUIRED",
+   "description": "GENERATION|PROMPT|ASSET_GROUP|BATCH"
+  },
+  {
+   "name": "entity_id",
+   "type": "STRING",
+   "mode": "REQUIRED",
+   "description": ""
+  },
+  {
+   "name": "version",
+   "type": "INT64",
+   "mode": "NULLABLE",
+   "description": ""
+  },
+  {
+   "name": "status",
+   "type": "STRING",
+   "mode": "REQUIRED",
+   "description": ""
+  },
+  {
+   "name": "action",
+   "type": "STRING",
+   "mode": "NULLABLE",
+   "description": ""
+  },
+  {
+   "name": "reason",
+   "type": "STRING",
+   "mode": "NULLABLE",
+   "description": ""
+  },
+  {
+   "name": "is_final",
+   "type": "BOOL",
+   "mode": "NULLABLE",
+   "description": ""
+  },
+  {
+   "name": "gcs_uri",
+   "type": "STRING",
+   "mode": "NULLABLE",
+   "description": ""
+  },
+  {
+   "name": "batch_run_id",
+   "type": "STRING",
+   "mode": "NULLABLE",
+   "description": ""
+  },
+  {
+   "name": "set_by",
+   "type": "STRING",
+   "mode": "REQUIRED",
+   "description": ""
+  },
+  {
+   "name": "set_by_type",
+   "type": "STRING",
+   "mode": "NULLABLE",
+   "description": "USER|SYSTEM"
+  },
+  {
+   "name": "created_at",
+   "type": "TIMESTAMP",
+   "mode": "REQUIRED",
+   "description": ""
+  }
+ ]
+}

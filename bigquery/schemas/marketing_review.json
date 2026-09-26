@@ -1,0 +1,41 @@
+{
+ "description": "Gate 2 marketing/brand review decisions.",
+ "columns": [
+  {
+   "name": "asset_group_id",
+   "type": "STRING",
+   "mode": "REQUIRED",
+   "description": ""
+  },
+  {
+   "name": "version",
+   "type": "INT64",
+   "mode": "REQUIRED",
+   "description": ""
+  },
+  {
+   "name": "disposition",
+   "type": "STRING",
+   "mode": "REQUIRED",
+   "description": "APPROVED|REJECTED|AUTO_APPROVED"
+  },
+  {
+   "name": "reviewer_identity",
+   "type": "STRING",
+   "mode": "REQUIRED",
+   "description": ""
+  },
+  {
+   "name": "reason",
+   "type": "STRING",
+   "mode": "NULLABLE",
+   "description": ""
+  },
+  {
+   "name": "created_at",
+   "type": "TIMESTAMP",
+   "mode": "REQUIRED",
+   "description": ""
+  }
+ ]
+}

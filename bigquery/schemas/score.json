@@ -1,0 +1,137 @@
+{
+ "description": "One row per scoring call (initial or re-score after revision).",
+ "columns": [
+  {
+   "name": "score_id",
+   "type": "STRING",
+   "mode": "REQUIRED",
+   "description": ""
+  },
+  {
+   "name": "generation_id",
+   "type": "STRING",
+   "mode": "REQUIRED",
+   "description": ""
+  },
+  {
+   "name": "version",
+   "type": "INT64",
+   "mode": "REQUIRED",
+   "description": ""
+  },
+  {
+   "name": "score_type",
+   "type": "STRING",
+   "mode": "NULLABLE",
+   "description": "initial|rescore"
+  },
+  {
+   "name": "composite",
+   "type": "FLOAT64",
+   "mode": "REQUIRED",
+   "description": "0-100"
+  },
+  {
+   "name": "prompt_adherence",
+   "type": "FLOAT64",
+   "mode": "NULLABLE",
+   "description": ""
+  },
+  {
+   "name": "brand_compliance",
+   "type": "FLOAT64",
+   "mode": "NULLABLE",
+   "description": ""
+  },
+  {
+   "name": "artifact_freedom",
+   "type": "FLOAT64",
+   "mode": "NULLABLE",
+   "description": ""
+  },
+  {
+   "name": "safety_and_constraints",
+   "type": "FLOAT64",
+   "mode": "NULLABLE",
+   "description": ""
+  },
+  {
+   "name": "hallucination_risk",
+   "type": "FLOAT64",
+   "mode": "NULLABLE",
+   "description": "0-100"
+  },
+  {
+   "name": "hallucination_band",
+   "type": "STRING",
+   "mode": "NULLABLE",
+   "description": ""
+  },
+  {
+   "name": "tier",
+   "type": "STRING",
+   "mode": "NULLABLE",
+   "description": ""
+  },
+  {
+   "name": "decision_status",
+   "type": "STRING",
+   "mode": "NULLABLE",
+   "description": ""
+  },
+  {
+   "name": "decision_action",
+   "type": "STRING",
+   "mode": "NULLABLE",
+   "description": ""
+  },
+  {
+   "name": "decision_reason",
+   "type": "STRING",
+   "mode": "NULLABLE",
+   "description": ""
+  },
+  {
+   "name": "rationale",
+   "type": "STRING",
+   "mode": "NULLABLE",
+   "description": ""
+  },
+  {
+   "name": "critic_provider",
+   "type": "STRING",
+   "mode": "NULLABLE",
+   "description": ""
+  },
+  {
+   "name": "critic_model",
+   "type": "STRING",
+   "mode": "NULLABLE",
+   "description": ""
+  },
+  {
+   "name": "weights",
+   "type": "JSON",
+   "mode": "NULLABLE",
+   "description": ""
+  },
+  {
+   "name": "thresholds",
+   "type": "JSON",
+   "mode": "NULLABLE",
+   "description": ""
+  },
+  {
+   "name": "raw",
+   "type": "JSON",
+   "mode": "NULLABLE",
+   "description": ""
+  },
+  {
+   "name": "scored_at",
+   "type": "TIMESTAMP",
+   "mode": "REQUIRED",
+   "description": ""
+  }
+ ]
+}

@@ -1,0 +1,41 @@
+#!/bin/bash
+# Creative Studio VM bootstrap (rendered by Terraform). Idempotent: safe on every boot.
+# The install step follows the pinned GCC repo README; validate `install_command`
+# against that README during the Stage 1 spike (TDD OD-07 / OD-09).
+set -euo pipefail
+exec > >(tee -a /var/log/creative-studio-startup.log) 2>&1
+echo "[startup] $(date -Is) begin"
+
+if ! command -v docker >/dev/null; then
+  apt-get update -y
+  apt-get install -y ca-certificates curl git gnupg
+  install -m 0755 -d /etc/apt/keyrings
+  curl -fsSL https://download.docker.com/linux/debian/gpg -o /etc/apt/keyrings/docker.asc
+  echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/debian $(. /etc/os-release && echo "$VERSION_CODENAME") stable" > /etc/apt/sources.list.d/docker.list
+  apt-get update -y
+  apt-get install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
+  systemctl enable --now docker
+fi
+
+APP_DIR=/opt/creative-studio
+if [ ! -d "$APP_DIR/.git" ]; then
+  git clone "${repo_url}" "$APP_DIR"
+fi
+cd "$APP_DIR"
+git fetch --all --tags
+git checkout "${repo_ref}"
+echo "[startup] GCC at $(git rev-parse HEAD)"
+
+# Settings the pipeline needs Creative Studio to use; map them to the repo's own env names.
+cat > "$APP_DIR/.env.cap" <<ENV
+GOOGLE_CLOUD_PROJECT=${project_id}
+GOOGLE_CLOUD_LOCATION=${region}
+GENMEDIA_BUCKET=${output_bucket}
+ENV
+
+if [ ! -f /var/lib/cap-gcc-installed ] || [ "$(cat /var/lib/cap-gcc-installed)" != "$(git rev-parse HEAD)" ]; then
+  set -a; . "$APP_DIR/.env.cap"; set +a
+  bash -c '${install_command}'
+  git rev-parse HEAD > /var/lib/cap-gcc-installed
+fi
+echo "[startup] $(date -Is) done"

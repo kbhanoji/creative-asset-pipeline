@@ -1,0 +1,42 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "creative-asset-pipeline"
+version = "0.1.0"
+description = "Configurable GenMedia creative asset pipeline: prompt agent, image generation, scoring, HITL routing and BigQuery lineage on Google Cloud."
+requires-python = ">=3.11"
+dependencies = [
+  "pydantic>=2.8",
+  "pyyaml>=6.0",
+  "typer>=0.12",
+  "rich>=13.7",
+]
+
+[project.optional-dependencies]
+gcp = [
+  "google-cloud-bigquery>=3.25",
+  "google-cloud-storage>=2.18",
+  "google-genai>=1.30",
+  "google-auth>=2.30",
+  "requests>=2.32",
+]
+agent = [
+  "google-adk>=1.10",
+  "google-cloud-aiplatform[agent_engines,adk]>=1.110",
+]
+router = [
+  "fastapi>=0.115",
+  "uvicorn>=0.30",
+]
+dev = ["pytest>=8"]
+
+[project.scripts]
+cap = "cap.cli:app"
+
+[tool.setuptools.packages.find]
+include = ["cap*", "agents*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

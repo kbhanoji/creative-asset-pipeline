@@ -1,0 +1,71 @@
+{
+ "description": "One row per batch status change (append-only).",
+ "columns": [
+  {
+   "name": "batch_run_id",
+   "type": "STRING",
+   "mode": "REQUIRED",
+   "description": ""
+  },
+  {
+   "name": "status",
+   "type": "STRING",
+   "mode": "REQUIRED",
+   "description": "STARTED|RUNNING|WAITING_HITL|COMPLETED|FAILED"
+  },
+  {
+   "name": "trigger_type",
+   "type": "STRING",
+   "mode": "NULLABLE",
+   "description": "AGENT|CLI|SCHEDULE|ROUTER"
+  },
+  {
+   "name": "requested_by_user",
+   "type": "STRING",
+   "mode": "NULLABLE",
+   "description": ""
+  },
+  {
+   "name": "brand",
+   "type": "STRING",
+   "mode": "NULLABLE",
+   "description": ""
+  },
+  {
+   "name": "skus",
+   "type": "STRING",
+   "mode": "REPEATED",
+   "description": ""
+  },
+  {
+   "name": "generation_mode",
+   "type": "STRING",
+   "mode": "NULLABLE",
+   "description": "manual|automatic"
+  },
+  {
+   "name": "config_sha256",
+   "type": "STRING",
+   "mode": "NULLABLE",
+   "description": ""
+  },
+  {
+   "name": "config_snapshot_uri",
+   "type": "STRING",
+   "mode": "NULLABLE",
+   "description": ""
+  },
+  {
+   "name": "notes",
+   "type": "STRING",
+   "mode": "NULLABLE",
+   "description": ""
+  },
+  {
+   "name": "created_at",
+   "type": "TIMESTAMP",
+   "mode": "REQUIRED",
+   "description": ""
+  }
+ ]
+}

@@ -1,0 +1,77 @@
+{
+ "description": "Immutable edit log / audit trail of every human or system action on an image.",
+ "columns": [
+  {
+   "name": "event_id",
+   "type": "STRING",
+   "mode": "REQUIRED",
+   "description": ""
+  },
+  {
+   "name": "generation_id",
+   "type": "STRING",
+   "mode": "REQUIRED",
+   "description": ""
+  },
+  {
+   "name": "prev_version",
+   "type": "INT64",
+   "mode": "NULLABLE",
+   "description": ""
+  },
+  {
+   "name": "new_version",
+   "type": "INT64",
+   "mode": "NULLABLE",
+   "description": ""
+  },
+  {
+   "name": "prev_prompt_id",
+   "type": "STRING",
+   "mode": "NULLABLE",
+   "description": ""
+  },
+  {
+   "name": "new_prompt_id",
+   "type": "STRING",
+   "mode": "NULLABLE",
+   "description": ""
+  },
+  {
+   "name": "action",
+   "type": "STRING",
+   "mode": "REQUIRED",
+   "description": "REVISE_PROMPT|REGENERATE|APPROVE|REJECT|LINK|REGISTER"
+  },
+  {
+   "name": "prompt_text",
+   "type": "STRING",
+   "mode": "NULLABLE",
+   "description": ""
+  },
+  {
+   "name": "tool",
+   "type": "STRING",
+   "mode": "NULLABLE",
+   "description": ""
+  },
+  {
+   "name": "notes",
+   "type": "STRING",
+   "mode": "NULLABLE",
+   "description": ""
+  },
+  {
+   "name": "editor_identity",
+   "type": "STRING",
+   "mode": "REQUIRED",
+   "description": ""
+  },
+  {
+   "name": "created_at",
+   "type": "TIMESTAMP",
+   "mode": "REQUIRED",
+   "description": ""
+  }
+ ]
+}
