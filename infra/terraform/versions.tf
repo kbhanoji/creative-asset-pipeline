@@ -6,9 +6,10 @@ terraform {
       version = ">= 6.10, < 8.0"
     }
   }
-  # Local state by default. For shared use, `cap infra apply` can be pointed at a
-  # GCS backend via -backend-config once the project (and a state bucket) exists.
-  backend "local" {}
+  # State lives in a GCS bucket inside the project (<project>-cap-tfstate), created by
+  # `cap infra apply` / install.sh before Terraform runs, so any session (Cloud Shell,
+  # another admin) can resume or update. Configured with -backend-config=bucket/prefix.
+  backend "gcs" {}
 }
 
 provider "google" {

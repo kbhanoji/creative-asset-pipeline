@@ -4,24 +4,6 @@
 variable "customer_id" { type = string }
 variable "environment" { type = string }
 variable "project_id" { type = string }
-variable "project_name" { type = string }
-variable "create_project" { type = bool }
-variable "billing_account" {
-  type    = string
-  default = ""
-}
-variable "org_id" {
-  type    = string
-  default = ""
-}
-variable "folder_id" {
-  type    = string
-  default = ""
-}
-variable "project_deletion_policy" {
-  type    = string
-  default = "PREVENT" # DELETE lets `terraform destroy` remove a sandbox project
-}
 variable "region" { type = string }
 variable "zone" { type = string }
 variable "labels" {

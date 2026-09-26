@@ -154,3 +154,20 @@ def test_dev_auto_schedule(cfg):
     assert cron("08:30", ["mon", "tue", "wed", "thu", "fri"]) == "30 8 * * 1,2,3,4,5"
     with pytest.raises(ValueError):
         cron("5pm", ["mon"])
+
+
+def test_teardown_guards(cfg):
+    from cap import gcp_project as gp
+    ours = {"lifecycleState": "ACTIVE", "labels": {"created-by": "creative-asset-pipeline"}}
+    theirs = {"lifecycleState": "ACTIVE", "labels": {}}
+    assert gp.teardown_plan(cfg, ours)[0] == "project"
+    assert gp.teardown_plan(cfg, theirs)[0] == "refuse"                       # not created by us
+    assert gp.teardown_plan(cfg, None)[0] == "refuse"
+    assert gp.teardown_plan(cfg, {**ours, "lifecycleState": "DELETE_REQUESTED"})[0] == "refuse"
+    prod = cfg.model_copy(update={"environment": "prod"})
+    assert gp.teardown_plan(prod, ours)[0] == "refuse"
+    assert gp.teardown_plan(prod, ours, allow_prod=True)[0] == "project"
+    existing = cfg.model_copy(deep=True)
+    existing.gcp.create_project = False
+    assert gp.teardown_plan(existing, theirs)[0] == "resources"                # landing zone: resources only
+    assert gp.confirmation_phrase(cfg) == "delete sbd-cs-dev-kbhanoji"

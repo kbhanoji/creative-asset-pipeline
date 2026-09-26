@@ -201,10 +201,7 @@ def _tfvars(cfg) -> dict:
     cs = cfg.creative_studio
     return {
         "customer_id": cfg.customer.id, "environment": cfg.environment,
-        "project_id": cfg.gcp.project_id, "project_name": cfg.gcp.project_name or cfg.gcp.project_id,
-        "create_project": cfg.gcp.create_project, "billing_account": cfg.gcp.billing_account,
-        "org_id": cfg.gcp.org_id, "folder_id": cfg.gcp.folder_id,
-        "project_deletion_policy": "PREVENT" if cfg.environment == "prod" else "DELETE",
+        "project_id": cfg.gcp.project_id,
         "region": cfg.gcp.region, "zone": cfg.gcp.zone, "labels": cfg.gcp.labels,
         "bigquery_location": cfg.gcp.bigquery_location, "dataset": cfg.bigquery.dataset,
         "deletion_protection": cfg.environment == "prod",
@@ -224,17 +221,62 @@ def _tfvars(cfg) -> dict:
     }
 
 
-def _tf(cfg, *args: str) -> None:
+def _tf(cfg, *args: str, bootstrap: bool = True) -> None:
+    """Run Terraform against the GCS state bucket in the project.
+
+    bootstrap=True (plan/apply): create the project if configured, link billing and create the
+    state bucket first. The project itself is never managed by Terraform (see cap/gcp_project.py).
+    """
+    from . import gcp_project as gp
     if not shutil.which("terraform"):
-        con.print("[red]terraform not found. Install it: brew install terraform[/red]")
+        con.print("[red]terraform not found. Install it (macOS: brew install hashicorp/tap/terraform; "
+                  "Cloud Shell: installer/install.sh installs it).[/red]")
         raise typer.Exit(1)
+    if bootstrap:
+        try:
+            if gp.ensure_project(cfg, log=con.print) == "created":
+                con.print(f"[green]Project {cfg.gcp.project_id} created.[/green]")
+            gp.ensure_state_bucket(cfg, log=con.print)
+        except Exception as e:  # noqa: BLE001
+            con.print(f"[red]{e}[/red]")
+            raise typer.Exit(2)
     STATE_DIR.mkdir(exist_ok=True)
     key = f"{cfg.customer.id}-{cfg.environment}"
     var_file = STATE_DIR / f"{key}.tfvars.json"
     var_file.write_text(json.dumps(_tfvars(cfg), indent=2))
-    _run(["terraform", "init", "-input=false", "-reconfigure", f"-backend-config=path={STATE_DIR / (key + '.tfstate')}"],
-         cwd=TF_DIR)
+    backend = [f"-backend-config=bucket={gp.state_bucket(cfg)}", f"-backend-config=prefix={gp.state_prefix(cfg)}"]
+    local_state = STATE_DIR / f"{key}.tfstate"
+    if local_state.exists():
+        _migrate_local_state(cfg, local_state, backend)
+    _run(["terraform", "init", "-input=false", "-reconfigure", *backend], cwd=TF_DIR)
     _run(["terraform", *args, f"-var-file={var_file}"], cwd=TF_DIR)
+
+
+def _migrate_local_state(cfg, local_state: Path, backend: list[str]) -> None:
+    """One-time move of pre-GCS local state into the bucket.
+
+    init against GCS -> `state push` the local file -> drop the project resource (the installer
+    owns the project now) and label the project as created by this pipeline.
+    """
+    from . import gcp_project as gp
+    con.print(f"[yellow]Migrating local Terraform state {local_state.name} to gs://{gp.state_bucket(cfg)} ...[/yellow]")
+    _run(["terraform", "init", "-input=false", "-reconfigure", *backend], cwd=TF_DIR)
+    remote = _run(["terraform", "state", "list"], cwd=TF_DIR, capture=True, check=False).stdout.split()
+    if remote:  # already pushed (e.g. an earlier, interrupted migration): finish it, never overwrite
+        if not any(a.startswith("google_project.this") for a in remote):
+            gp.label_as_ours(cfg)
+            local_state.rename(local_state.with_suffix(".tfstate.migrated"))
+            con.print("[green]Remote state already present; local state retired.[/green]")
+        else:
+            con.print("[yellow]Remote state already has resources; not overwriting. Local file kept.[/yellow]")
+        return
+    _run(["terraform", "state", "push", str(local_state)], cwd=TF_DIR)
+    for addr in [a for a in _run(["terraform", "state", "list"], cwd=TF_DIR, capture=True).stdout.split()
+                 if a.startswith("google_project.this")]:
+        _run(["terraform", "state", "rm", addr], cwd=TF_DIR)
+        gp.label_as_ours(cfg)  # the old Terraform created this project
+    local_state.rename(local_state.with_suffix(".tfstate.migrated"))
+    con.print("[green]State migrated to GCS.[/green]")
 
 
 @infra.command("render")
@@ -266,8 +308,89 @@ def infra_apply(config: Optional[Path] = ConfigOpt, yes: bool = typer.Option(Fal
 
 @infra.command("destroy")
 def infra_destroy(config: Optional[Path] = ConfigOpt):
-    """Destroy everything Terraform created (Terraform asks for confirmation; prod is deletion-protected)."""
-    _tf(_load(config), "destroy", "-input=false")
+    """Destroy the pipeline resources Terraform created (not the project; see `cap teardown`)."""
+    _tf(_load(config), "destroy", "-input=false", bootstrap=False)
+
+
+# =============================================================================
+# teardown
+# =============================================================================
+@app.command()
+def teardown(config: Optional[Path] = ConfigOpt,
+             execute: bool = typer.Option(False, "--execute", help="Actually delete (default: dry run)"),
+             confirm: str = typer.Option("", help='Non-interactive confirmation, must equal "delete <project-id>"'),
+             allow_prod: bool = typer.Option(False, "--allow-prod", help="Allow tearing down environment: prod")):
+    """Delete what the installer created. Dry run by default; --execute asks you to type `delete <project-id>`.
+
+    Project created by the installer -> the whole project is deleted (recoverable for 30 days).
+    Existing project -> only this pipeline's and Creative Studio's resources are removed.
+    """
+    from . import gcp_project as gp
+    cfg = _load(config)
+    pid = cfg.gcp.project_id
+    proj = gp.describe_project(pid)
+    mode, reason = gp.teardown_plan(cfg, proj, allow_prod)
+    t = Table(title=f"Teardown: {pid} ({cfg.environment})", show_header=False)
+    t.add_row("Mode", f"[bold]{mode}[/bold]: {reason}")
+    if mode != "refuse":
+        for kind, items in gp.inventory(cfg).items():
+            t.add_row(kind, ", ".join(items) or "-")
+    con.print(t)
+    if mode == "refuse":
+        con.print(f"[red]Refusing: {reason}[/red]")
+        raise typer.Exit(2)
+    if mode == "project":
+        con.print("[yellow]Deleting the project removes EVERYTHING in it (data included). It can be restored with "
+                  f"`gcloud projects undelete {pid}` for 30 days; the ID can't be reused during that time.[/yellow]")
+    con.print("[yellow]Not removed (outside the project): your GitHub fork and the Google Cloud Build app installed "
+              "on your GitHub account; remove them on GitHub if no longer needed.[/yellow]")
+    if not execute:
+        con.print("Dry run only. Re-run with --execute to delete.")
+        return
+    phrase = gp.confirmation_phrase(cfg)
+    typed = confirm or typer.prompt(f'Type "{phrase}" to confirm')
+    if typed.strip() != phrase:
+        con.print("[red]Confirmation text did not match; nothing was deleted.[/red]")
+        raise typer.Exit(2)
+    if mode == "project":
+        gp.delete_project(pid)
+        for f in STATE_DIR.glob(f"{cfg.customer.id}-{cfg.environment}.*"):
+            f.unlink()
+        con.print(f"[green]Project {pid} deleted (pending deletion for 30 days).[/green]")
+        return
+    _teardown_resources(cfg)
+
+
+def _teardown_resources(cfg) -> None:
+    """Existing project: remove only what this pipeline and Creative Studio created, in reverse order."""
+    p, r = cfg.gcp.project_id, cfg.gcp.region
+    for job in [j for j, _ in SCHEDULE_JOBS.values()]:
+        _run(["gcloud", "scheduler", "jobs", "delete", job, f"--location={r}", f"--project={p}", "--quiet"], check=False)
+    for trig in ("cap-creative-studio-finalized", "cap-intermediate-finalized"):
+        _run(["gcloud", "eventarc", "triggers", "delete", trig, f"--location={r}", f"--project={p}", "--quiet"],
+             check=False)
+    for svc in ("cap-prompt-agent", "cap-lineage-router"):
+        _run(["gcloud", "run", "services", "delete", svc, f"--region={r}", f"--project={p}", "--quiet"], check=False)
+    gcc_env = _gcc_env_dir(cfg)
+    if gcc_env and (gcc_env / "backend.tf").exists():
+        con.print(f"Destroying Creative Studio infrastructure ({gcc_env}) ...")
+        tfvars = next(gcc_env.glob("*.tfvars"), None)
+        _run(["terraform", "init", "-input=false"], cwd=gcc_env, check=False)
+        _run(["terraform", "destroy", "-input=false", "-auto-approve", *( [f"-var-file={tfvars.name}"] if tfvars else [])],
+             cwd=gcc_env, check=False)
+    elif cfg.creative_studio.deployment == "cloud_run":
+        con.print("[yellow]Creative Studio environment folder not found; destroy it from its clone with "
+                  "`terraform destroy` in infra/environments/<env>.[/yellow]")
+    _tf(cfg, "destroy", "-input=false", "-auto-approve", bootstrap=False)
+    con.print("[green]Pipeline resources removed. The project and its state bucket were kept.[/green]")
+
+
+def _gcc_env_dir(cfg) -> Optional[Path]:
+    src = cfg.creative_studio.fork_url or cfg.creative_studio.repo_url
+    clone = ROOT.parent / src.rstrip("/").removesuffix(".git").split("/")[-1]
+    envs = [d for d in (clone / "infra" / "environments").glob("*") if d.is_dir() and d.name != "dev-infra-example"] \
+        if clone.is_dir() else []
+    return envs[0] if len(envs) == 1 else None
 
 
 # =============================================================================

@@ -26,21 +26,11 @@ locals {
   ]
 }
 
-resource "google_project" "this" {
-  count               = var.create_project ? 1 : 0
-  project_id          = var.project_id
-  name                = var.project_name
-  billing_account     = var.billing_account
-  org_id              = var.org_id != "" ? var.org_id : null
-  folder_id           = var.folder_id != "" ? var.folder_id : null
-  labels              = local.labels
-  auto_create_network = false
-  deletion_policy     = var.project_deletion_policy
-}
-
+# The project itself is created (and deleted) by the installer with gcloud, not by
+# Terraform: `cap infra apply` / install.sh creates it, links billing and the state
+# bucket, and `cap teardown` deletes it. Terraform manages everything inside it.
 data "google_project" "this" {
   project_id = var.project_id
-  depends_on = [google_project.this]
 }
 
 resource "google_project_service" "apis" {
