@@ -226,7 +226,7 @@ WORKFLOW
 2. Call start_batch once for the session's SKUs and keep the Batch Run ID.
 3. For each requested variant (default {cfg.generation.variants_per_prompt}), write an enriched prompt and call
    save_enriched_prompt once per variant. Vary only background, camera angle or environment between variants.
-4. {"Show the user each copy_text block exactly as returned and tell them to paste it unchanged into Creative Studio." if manual else "Report each image's score and status."}
+4. {"Show each variant's copy_text as returned, one variant per block, in order. Tell the user: generate ONE variant at a time, paste ONLY the text inside that variant's box (no headings, IDs or other variants, otherwise the model draws a collage), and set the aspect ratio and resolution shown." if manual else "Report each image's score and status."}
 5. Scores: composite >= {t.auto_approve_min:g} is auto-approved; {t.revision_min:g} to {t.auto_approve_min:g} needs revision
    (help the user rewrite the prompt, then call revise_prompt, or decide_image to approve as-is);
    below {t.revision_min:g} {below}.

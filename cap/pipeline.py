@@ -121,17 +121,19 @@ class Pipeline:
         return saved
 
     def copy_block(self, p: dict[str, Any]) -> str:
-        """Human-readable block the user pastes into Creative Studio (manual mode)."""
-        folder = self.cfg.creative_studio.folder_pattern.format(batch_run_id=p.get("batch_run_id") or "adhoc", sku=p["sku"])
-        refs = "\n".join(f"  - {r}" for r in p.get("reference_images") or []) or "  (none)"
+        """Markdown block the user works from in Creative Studio (manual mode).
+
+        One variant per block, and the prompt alone inside a code box: pasting headers or several
+        variants together makes the model draw a collage, and one image must map to one Prompt ID.
+        """
+        refs = ", ".join(p.get("reference_images") or []) or "none"
         return (
-            f"Prompt ID: {p['prompt_id']}   (family {p['prompt_lineage_id']} v{p['prompt_version']})\n"
-            f"SKU: {p['sku']}   Batch: {p.get('batch_run_id') or 'adhoc'}   Creative Studio folder: {folder}\n"
-            f"Model: {self.cfg.models.image_generation}   Resolution: {p['resolution']}   Aspect ratio: {p['aspect_ratio']}"
-            f"   Variants: {p['variants_total']}\n"
-            f"Reference images to attach:\n{refs}\n"
-            f"---- paste exactly (do not edit for v1) ----\n{p['prompt_text']}\n"
-            f"---- end ----"
+            f"**Variant {p.get('variant_index') or 1}: Prompt ID `{p['prompt_id']}`** "
+            f"(family `{p['prompt_lineage_id']}`, v{p['prompt_version']}, batch `{p.get('batch_run_id') or 'adhoc'}`)\n\n"
+            f"Creative Studio settings: model **{self.cfg.models.image_generation}** · aspect ratio **{p['aspect_ratio']}** · "
+            f"resolution **{p['resolution']}** · reference images: {refs}\n\n"
+            f"Copy **only** the text in the box (nothing above or below it) into one Creative Studio generation:\n\n"
+            f"```text\n{p['prompt_text']}\n```\n"
         )
 
     # =====================================================================

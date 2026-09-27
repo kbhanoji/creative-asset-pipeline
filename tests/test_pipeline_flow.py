@@ -105,7 +105,9 @@ def test_manual_flow_revise_then_approve(env):
     br = pipe.start_batch(["DCD800B"], "designer@x.com")
     p = pipe.save_prompts([{"sku": "DCD800B", "prompt_text": "DEWALT DCD800B hero shot", "shot_type": "hero"}],
                           "designer@x.com", br)[0]
-    assert p["prompt_version"] == 1 and "paste exactly" in p["copy_text"]
+    assert p["prompt_version"] == 1
+    # the prompt must sit alone in a code box, so pasting can't pick up headers or other variants
+    assert f"```text\n{p['prompt_text']}\n```" in p["copy_text"] and "Copy **only**" in p["copy_text"]
 
     # user pastes into Creative Studio; router matches by prompt hash
     found = bq.get_prompt_by_hash(p["prompt_sha256"])

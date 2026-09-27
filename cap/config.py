@@ -229,6 +229,7 @@ class CreativeStudio(BaseModel):
     ports: list[int] = [22, 8080]                # opened to the IAP range only
     prompt_metadata_key: str = "prompt"
     user_metadata_key: str = "user_email"
+    ignore_suffixes: tuple[str, ...] = ("_thumbnail",)   # objects the router skips (GCC preview copies)
     folder_pattern: str = "{batch_run_id}/{sku}/"
 
 

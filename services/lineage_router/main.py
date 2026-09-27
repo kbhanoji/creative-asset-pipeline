@@ -54,6 +54,8 @@ async def on_event(request: Request):
     watched = (bucket == CFG.bucket("creative-studio")) or (bucket == CFG.bucket("intermediate") and name.startswith("inbox/"))
     if not watched or not ctype.startswith(IMAGE_TYPES):
         return {"ignored": uri}
+    if name.endswith(CFG.creative_studio.ignore_suffixes):  # e.g. Creative Studio's <id>_thumbnail previews
+        return {"ignored": uri, "reason": "thumbnail"}
 
     prompt, method = match_prompt(name, metadata)
     user = (metadata.get(CFG.creative_studio.user_metadata_key) or metadata.get("created-by")
