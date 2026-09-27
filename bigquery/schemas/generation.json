@@ -114,6 +114,24 @@
    "type": "TIMESTAMP",
    "mode": "REQUIRED",
    "description": ""
+  },
+  {
+   "name": "width",
+   "type": "INT64",
+   "mode": "NULLABLE",
+   "description": "actual pixel width"
+  },
+  {
+   "name": "height",
+   "type": "INT64",
+   "mode": "NULLABLE",
+   "description": "actual pixel height"
+  },
+  {
+   "name": "resolution_actual",
+   "type": "STRING",
+   "mode": "NULLABLE",
+   "description": "1K|2K|4K from the real pixel size (the prompt holds the requested one)"
   }
  ]
 }

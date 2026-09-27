@@ -175,3 +175,20 @@ def test_unmatched_and_ceiling(env, monkeypatch):
     p = pipe.save_prompts([{"sku": "DCD800B", "prompt_text": "p", "shot_type": "hero"}], "u")[0]
     with pytest.raises(PipelineError, match="ceiling"):
         pipe.generate_for_prompt(p["prompt_id"], "u", n=1)
+
+
+def test_creative_studio_jpeg_actual_size_and_payload(env):
+    import json
+    from cap import imaging
+    from tests.test_imaging import _jpeg
+    cfg, bq, pipe, scores = env
+    p = pipe.save_prompts([{"sku": "DCD800B", "prompt_text": "p", "shot_type": "hero", "variant_index": 2,
+                            "resolution": "2K"}], "u")[0]
+    scores.append(0.95)
+    g = pipe.register_image(data=_jpeg(1024, 1024), mime_type="image/jpeg", prompt_id=p["prompt_id"], user="u",
+                            tool="CREATIVE_STUDIO", match_method="MANUAL_LINK", source_uri="gs://cs/x")
+    assert g["resolution_actual"] == "1K" and (g["width"], g["height"]) == (1024, 1024)
+    assert g["gcs_uri"].endswith("_1K_v1.jpg") and "Requested 2K" in g["notice"]
+    assert g["variant_index"] == 2 and g["model"] is None                  # prompt slot; model unknown for GCC
+    approved = next(u for u in pipe.gcs.objects if "-approved/" in u)
+    assert json.loads(imaging.read_jpeg_comment(pipe.gcs.objects[approved][0], "gcc_scoring_payload"))["status"] == "APPROVED"

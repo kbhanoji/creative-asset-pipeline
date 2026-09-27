@@ -15,13 +15,12 @@ from __future__ import annotations
 
 import hashlib
 import json
-import struct
-import zlib
 from datetime import datetime, timezone
 from typing import Any
 
 from . import ids
 from .config import Config, GenerationMode
+from .imaging import embed_payload, embed_png_text, image_size, resolution_class  # noqa: F401
 from .lineage import Lineage, now
 from .routing import FINAL_STATUSES, Decision, Status, decide as route
 from .storage import Storage
@@ -154,7 +153,7 @@ class Pipeline:
             results.append(self.register_image(
                 data=img.data, mime_type=img.mime_type, prompt_id=prompt_id, user=user, tool="PIPELINE_AUTO",
                 match_method="PIPELINE", model=img.model, generation_id=generation_id,
-                variant_index=idx if not generation_id else None, prompt=prompt))
+                prompt=prompt))
         return results
 
     def register_image(self, *, prompt_id: str | None, user: str, tool: str, match_method: str,
@@ -192,22 +191,35 @@ class Pipeline:
         else:
             self._check_ceiling(1)
             generation_id, version = ids.generation_id(), 1
+        if variant_index is None:
+            variant_index = prompt.get("variant_index")  # the prompt slot this image belongs to
 
+        # name and record the ACTUAL pixel size (Creative Studio may ignore the requested 2K/4K)
+        size = image_size(data)
+        actual_res = resolution_class(*size) if size else ""
+        requested_res = prompt.get("resolution") or ""
         ext = EXT.get(mime_type, "png")
         file = self.gcs.file_name(sku=prompt["sku"], shot_type=prompt.get("shot_type") or "hero",
-                                  aspect=prompt.get("aspect_ratio") or "1:1", resolution=prompt.get("resolution") or "",
+                                  aspect=prompt.get("aspect_ratio") or "1:1", resolution=actual_res or requested_res,
                                   version=version, ext=ext)
         path = self.gcs.object_path(sku=prompt["sku"], batch_run_id=prompt.get("batch_run_id"),
                                     entity_id=generation_id, version=version, file=file)
         base_md = self._base_metadata(prompt, generation_id, version, user)
-        uri = self.gcs.upload_bytes("intermediate", path, data, mime_type, {**base_md, "status": Status.PENDING_SCORE})
+        size_md = {"width": size[0], "height": size[1], "resolution-actual": actual_res,
+                   "resolution-requested": requested_res} if size else {"resolution-requested": requested_res}
+        uri = self.gcs.upload_bytes("intermediate", path, data, mime_type,
+                                    {**base_md, **size_md, "status": Status.PENDING_SCORE})
 
         row = {
             "generation_id": generation_id, "version": version, "parent_generation_id": parent_generation_id,
             "prompt_id": prompt["prompt_id"], "prompt_lineage_id": prompt.get("prompt_lineage_id"),
             "parent_asset_id": prompt["parent_asset_id"], "sku": prompt["sku"], "batch_run_id": prompt.get("batch_run_id"),
             "variant_index": variant_index, "gcs_uri": uri, "sha256": ids.sha256_bytes(data), "mime_type": mime_type,
-            "model": model or self.cfg.models.image_generation, "tool": tool,
+            "width": size[0] if size else None, "height": size[1] if size else None,
+            "resolution_actual": actual_res or None,
+            # only record a model we know was used: the pipeline's own call, or one passed in explicitly.
+            # Creative Studio's model comes from its database once the router reads it.
+            "model": model or (self.cfg.models.image_generation if tool == "PIPELINE_AUTO" else None), "tool": tool,
             "generation_mode": self.cfg.generation.mode.value, "match_method": match_method, "source_uri": source_uri,
             "created_by": user, "created_at": now(),
         }
@@ -220,6 +232,9 @@ class Pipeline:
             "tool": tool, "notes": f"match_method={match_method}", "editor_identity": user, "created_at": now()})
         self._disposition("GENERATION", generation_id, version, Status.PENDING_SCORE, "REGISTERED", None, False, uri,
                           prompt.get("batch_run_id"), user, "USER" if tool != "PIPELINE_AUTO" else "SYSTEM")
+        if size and requested_res and actual_res != requested_res:
+            row["notice"] = (f"Requested {requested_res} but the image is {size[0]}x{size[1]} ({actual_res}). "
+                             "Set the resolution in the generation tool.")
         if version > self.cfg.scoring.hitl.edit_notice_at:
             row["notice"] = (f"This image has {version - 1} revisions. Each regeneration consumes model capacity "
                              f"billed to {self.cfg.customer.name}.")
@@ -387,8 +402,7 @@ class Pipeline:
                                            for k, w in self.cfg.scoring.weights.items()},
                             "rationale": critic.rationale})
         payload["timestamp"] = now()
-        if (gen.get("mime_type") or "image/png") == "image/png":
-            data = embed_png_text(data, "gcc_scoring_payload", json.dumps(payload))
+        data = embed_payload(data, gen.get("mime_type") or "image/png", "gcc_scoring_payload", json.dumps(payload))
         _, name = self.gcs.split_uri(gen["gcs_uri"])
         md = {**self._base_metadata(prompt, gen["generation_id"], int(gen["version"]), gen.get("created_by")),
               "status": status, "decided-by": set_by}
@@ -455,15 +469,3 @@ def _skill_version(text: str) -> str:
         if "version:" in line.lower():
             return line.lower().split("version:")[-1].strip().split()[0]
     return hashlib.sha256(text.encode()).hexdigest()[:12]
-
-
-def embed_png_text(png: bytes, key: str, text: str) -> bytes:
-    """Insert an iTXt chunk after IHDR so the scoring payload travels with the file (SOW 3.4.5)."""
-    sig = b"\x89PNG\r\n\x1a\n"
-    if not png.startswith(sig):
-        return png
-    ihdr_len = struct.unpack(">I", png[8:12])[0]
-    cut = 8 + 12 + ihdr_len
-    body = key.encode("latin-1") + b"\x00\x00\x00\x00\x00" + text.encode("utf-8")
-    chunk = struct.pack(">I", len(body)) + b"iTXt" + body + struct.pack(">I", zlib.crc32(b"iTXt" + body) & 0xFFFFFFFF)
-    return png[:cut] + chunk + png[cut:]
