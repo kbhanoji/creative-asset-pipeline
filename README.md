@@ -133,6 +133,8 @@ You also need:
 - a smaller dev database by default: `db-custom-1-3840` on Enterprise edition, ~$50/month at 24/7 instead of ~$185
 - Artifact Registry image cleanup Stopping is still done by `cap gcc schedule` (17:00) or `cap gcc sleep`.
 
+**How it works end to end** (for newcomers, incl. Q&A on sources, landing zone, scoring, gold standards): [docs/how-it-works.md](docs/how-it-works.md).
+
 **Installing GCC:** follow [docs/gcc-install-runbook.md](docs/gcc-install-runbook.md). It lists every installer question with the answer and the reason.
 
 **Which GCC branch.** `creative_studio.branch_by_environment` maps `dev → develop`, `uat → test`, `prod → main`. `repo_ref` overrides it with a branch, tag or commit; pin a commit for enterprise/prod (TDD ADR-10). `cap gcc install` runs the bootstrap from that ref. When you fork, untick "Copy the main branch only" on GitHub so `develop` and `test` exist in your fork.
