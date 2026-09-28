@@ -561,6 +561,10 @@ def deploy_router(config: Optional[Path] = ConfigOpt):
             if cfg.creative_studio.deployment == "cloud_run":  # GCC's own bucket: not managed by our Terraform
                 _run(["gcloud", "storage", "buckets", "add-iam-policy-binding", f"gs://{cs_bucket}",
                       f"--member=serviceAccount:{sa}", "--role=roles/storage.objectViewer", "--format=none"])
+                if cfg.creative_studio.db_integration:  # read GCC's DB password (secret created by GCC)
+                    _run(["gcloud", "secrets", "add-iam-policy-binding", cfg.creative_studio.db_password_secret,
+                          f"--project={p}", f"--member=serviceAccount:{sa}",
+                          "--role=roles/secretmanager.secretAccessor", "--format=none"], check=False)
         else:
             con.print(f"[yellow]Creative Studio bucket gs://{cs_bucket} not found yet: install Creative Studio, "
                       f"then re-run `cap deploy router` to add its trigger.[/yellow]")
@@ -735,11 +739,30 @@ def image_register(prompt_id: str, file: Path, config: Optional[Path] = ConfigOp
                                                generation_id=generation_id))
 
 
+def _router_call(cfg, path: str, payload: dict) -> dict:
+    """POST to the lineage router as the signed-in user (Cloud Run IAM). Used for work that needs
+    Creative Studio's database, which is only reachable from Google Cloud."""
+    import requests
+    url = _run(["gcloud", "run", "services", "describe", "cap-lineage-router", f"--region={cfg.gcp.region}",
+                f"--project={cfg.gcp.project_id}", "--format=value(status.url)"], capture=True).stdout.strip()
+    token = _run(["gcloud", "auth", "print-identity-token"], capture=True).stdout.strip()
+    r = requests.post(url + path, json=payload, headers={"Authorization": f"Bearer {token}"}, timeout=600)
+    r.raise_for_status()
+    return r.json()
+
+
 @image.command("link")
 def image_link(generation_id: str, prompt_id: str, config: Optional[Path] = ConfigOpt,
-               user: Optional[str] = typer.Option(None)):
-    """Link an UNMATCHED Creative Studio image to its Prompt ID, then score it."""
-    _print(_pipe(_load(config)).link(generation_id, prompt_id, _user(user)))
+               user: Optional[str] = typer.Option(None),
+               local: bool = typer.Option(False, "--local", help="Run here instead of in the router "
+                                                               "(no Creative Studio user/brand/write-back)")):
+    """Link an UNMATCHED image to its Prompt ID, then score it (runs in the router by default)."""
+    cfg = _load(config)
+    if local or cfg.creative_studio.deployment != "cloud_run":
+        _print(_pipe(cfg).link(generation_id, prompt_id, _user(user)))
+        return
+    _print(_router_call(cfg, "/tasks/link-image",
+                        {"generation_id": generation_id, "prompt_id": prompt_id, "user": _user(user)}))
 
 
 @image.command("rescore")
@@ -878,6 +901,14 @@ def gcc_install(config: Optional[Path] = ConfigOpt, dry_run: bool = typer.Option
         return
     os.chdir(workdir)
     os.execvp("bash", ["bash", "-c", f"curl -fsSL {shlex.quote(url)} | bash"])
+
+
+@gcc.command("writeback")
+def gcc_writeback(generation_ids: list[str] = typer.Argument(..., help="GEN- IDs"), config: Optional[Path] = ConfigOpt):
+    """Write the pipeline score of scored images into Creative Studio's gallery 'Critique' field."""
+    cfg = _load(config)
+    for g in generation_ids:
+        _print(_router_call(cfg, "/tasks/gcc-writeback", {"generation_id": g}))
 
 
 @gcc.command("status")

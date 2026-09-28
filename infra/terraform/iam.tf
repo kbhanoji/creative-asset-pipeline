@@ -32,7 +32,7 @@ locals {
 
   project_roles = {
     "sa-prompt-agent"    = ["roles/aiplatform.user", "roles/bigquery.jobUser", "roles/logging.logWriter", "roles/cloudtrace.agent"]
-    "sa-lineage-router"  = ["roles/aiplatform.user", "roles/bigquery.jobUser", "roles/logging.logWriter", "roles/eventarc.eventReceiver", "roles/run.invoker"]
+    "sa-lineage-router"  = ["roles/aiplatform.user", "roles/bigquery.jobUser", "roles/logging.logWriter", "roles/eventarc.eventReceiver", "roles/run.invoker", "roles/cloudsql.client"]
     "sa-creative-studio" = ["roles/aiplatform.user", "roles/logging.logWriter", "roles/monitoring.metricWriter", "roles/artifactregistry.reader"]
     "sa-scheduler"       = ["roles/cloudsql.editor", "roles/run.invoker"]
   }

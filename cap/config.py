@@ -230,6 +230,15 @@ class CreativeStudio(BaseModel):
     prompt_metadata_key: str = "prompt"
     user_metadata_key: str = "user_email"
     ignore_suffixes: tuple[str, ...] = ("_thumbnail",)   # objects the router skips (GCC preview copies)
+    # --- GCC database integration (router only; needs Cloud SQL reachability) ---
+    db_integration: bool = True                 # link images via GCC media_items, real user/model, write-back
+    db_instance: str = ""                       # project:region:instance; blank = discover by sql_instance_prefix
+    db_name: str = "creative_studio"
+    db_user: str = "studio_user"
+    db_password_secret: str = "creative-studio-db-password"
+    link_wait_seconds: int = 90                 # GCC fills media_items.gcs_uris just after the upload
+    writeback_critique: bool = True             # write our score into media_items.critique (shown in GCC gallery)
+    use_gcc_brand_guidelines: bool = True       # critic uses the guideline GCC extracted from the brand PDF
     folder_pattern: str = "{batch_run_id}/{sku}/"
 
 

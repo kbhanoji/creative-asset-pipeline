@@ -32,9 +32,12 @@ class CriticResult:
     raw: dict[str, Any] = field(default_factory=dict)
 
 
-def _critic_instructions(cfg: Config, prompt: dict[str, Any]) -> str:
+def _critic_instructions(cfg: Config, prompt: dict[str, Any], brand_context: tuple[str, str] | None = None) -> str:
     skills = cfg.skills()
     brand_rules = "\n\n".join(f"## {k}\n{v}" for k, v in skills.items() if k != "prompt-craft")
+    if brand_context:  # GCC's guideline (from the brand PDF) is the primary source; skills add safety rules
+        brand_rules = (f"## Official brand guideline (extracted from the brand PDF in Creative Studio)\n{brand_context[1]}"
+                       f"\n\n## Additional rules\n{brand_rules}")
     dims = "\n".join(f"- {k}: {v}" for k, v in DIMENSIONS.items())
     return f"""You are a strict brand-compliance and image-quality critic for {cfg.customer.brand}.
 Score the attached generated image against the generation prompt, the product facts and the brand rules.
@@ -70,19 +73,24 @@ _SCHEMA = {
 
 
 def score_image(cfg: Config, image: bytes, mime_type: str, prompt: dict[str, Any],
-                reference_images: list[tuple[bytes, str]] | None = None) -> CriticResult:
+                reference_images: list[tuple[bytes, str]] | None = None,
+                brand_context: tuple[str, str] | None = None) -> CriticResult:
+    """brand_context = (source label, text), e.g. the guideline GCC extracted from the brand PDF."""
     if cfg.scoring.provider == "gcc_endpoint":
-        return _score_gcc(cfg, image, mime_type, prompt)
-    return _score_gemini(cfg, image, mime_type, prompt, reference_images or [])
+        result = _score_gcc(cfg, image, mime_type, prompt)
+    else:
+        result = _score_gemini(cfg, image, mime_type, prompt, reference_images or [], brand_context)
+    result.raw["brand_source"] = brand_context[0] if brand_context else "skills"
+    return result
 
 
 def _score_gemini(cfg: Config, image: bytes, mime_type: str, prompt: dict[str, Any],
-                  refs: list[tuple[bytes, str]]) -> CriticResult:
+                  refs: list[tuple[bytes, str]], brand_context: tuple[str, str] | None = None) -> CriticResult:
     from google import genai
     from google.genai import types
 
     client = genai.Client(vertexai=True, project=cfg.gcp.project_id, location=cfg.models.model_location)
-    parts: list[Any] = [types.Part.from_text(text=_critic_instructions(cfg, prompt)),
+    parts: list[Any] = [types.Part.from_text(text=_critic_instructions(cfg, prompt, brand_context)),
                         types.Part.from_text(text="GENERATED IMAGE:"),
                         types.Part.from_bytes(data=image, mime_type=mime_type)]
     for i, (data, mt) in enumerate(refs[:4], 1):

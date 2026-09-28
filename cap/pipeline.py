@@ -37,6 +37,7 @@ class Pipeline:
         self.cfg = cfg
         self.bq = lineage or Lineage(cfg)
         self.gcs = storage or Storage(cfg)
+        self.last_critic = None  # CriticResult of the latest score_and_route (used for write-back)
 
     # =====================================================================
     # Batches
@@ -159,7 +160,8 @@ class Pipeline:
     def register_image(self, *, prompt_id: str | None, user: str, tool: str, match_method: str,
                        data: bytes | None = None, mime_type: str | None = None, source_uri: str | None = None,
                        model: str | None = None, generation_id: str | None = None, variant_index: int | None = None,
-                       prompt: dict[str, Any] | None = None, score: bool = True) -> dict[str, Any]:
+                       prompt: dict[str, Any] | None = None, score: bool = True,
+                       brand_context: tuple[str, str] | None = None) -> dict[str, Any]:
         """Record one image version and (by default) score and route it.
 
         New image          -> new GEN- ID, version 1.
@@ -239,7 +241,9 @@ class Pipeline:
             row["notice"] = (f"This image has {version - 1} revisions. Each regeneration consumes model capacity "
                              f"billed to {self.cfg.customer.name}.")
         if score:
-            row["decision"] = self.score_and_route(row, data=data, prompt=prompt).__dict__
+            d = self.score_and_route(row, data=data, prompt=prompt, brand_context=brand_context)
+            row["decision"] = d.__dict__
+            row["sub_scores"], row["rationale"] = self.last_critic.sub_scores, self.last_critic.rationale
         return row
 
     def _register_unmatched(self, data: bytes, mime_type: str, source_uri: str | None, user: str, tool: str) -> dict:
@@ -260,14 +264,16 @@ class Pipeline:
     # Scoring + Gate 1 routing
     # =====================================================================
     def score_and_route(self, gen: dict[str, Any], data: bytes | None = None,
-                        prompt: dict[str, Any] | None = None) -> Decision:
+                        prompt: dict[str, Any] | None = None,
+                        brand_context: tuple[str, str] | None = None) -> Decision:
         from .scoring import score_image
 
         prompt = prompt or self._prompt(gen["prompt_id"])
         if data is None:
             data, _, _ = self.gcs.download(gen["gcs_uri"])
         refs = self._load_refs(prompt.get("reference_images") or [])
-        critic = score_image(self.cfg, data, gen.get("mime_type") or "image/png", prompt, refs)
+        critic = score_image(self.cfg, data, gen.get("mime_type") or "image/png", prompt, refs, brand_context)
+        self.last_critic = critic
         d = route(critic.sub_scores, self.cfg.scoring)
         version = int(gen["version"])
         self.bq.insert("score", {
@@ -370,7 +376,8 @@ class Pipeline:
         self._audit_package(generation_id)
         return {"generation_id": generation_id, "version": v, "status": new_status, "gcs_uri": uri}
 
-    def link(self, generation_id: str, prompt_id: str, user: str) -> dict[str, Any]:
+    def link(self, generation_id: str, prompt_id: str, user: str,
+             brand_context: tuple[str, str] | None = None, model: str | None = None) -> dict[str, Any]:
         """Link an UNMATCHED image to its prompt, then score it (TDD 6.4 orphan handling)."""
         gen = self.bq.get_generation(generation_id, 1)
         if not gen or gen.get("match_method") != "UNMATCHED":
@@ -380,7 +387,7 @@ class Pipeline:
                           True, gen["gcs_uri"], None, user, "USER")
         return self.register_image(data=data, mime_type=mt, prompt_id=prompt_id, user=user,
                                    tool=gen.get("tool") or "CREATIVE_STUDIO", match_method="MANUAL_LINK",
-                                   source_uri=gen.get("source_uri"))
+                                   source_uri=gen.get("source_uri"), brand_context=brand_context, model=model)
 
     # =====================================================================
     # helpers
