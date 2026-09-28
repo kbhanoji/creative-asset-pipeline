@@ -52,8 +52,18 @@ Test: batch `BR-20260927-DWT-001`, prompts `PR-01M3HVBQ…` (variant 1) and `PR-
 ### Step 3: The file arrival triggers the lineage router
 - An **Eventarc trigger** (`cap-creative-studio-finalized`) fires on "object finalized" in the GCC media bucket and calls the **lineage router** (`services/lineage_router/main.py`, Cloud Run, scales to zero).
 - The router skips non-images and Creative Studio's `_thumbnail` copies.
-- It tries to link the image to a Prompt ID, in order: a Prompt ID in the path/metadata → a prompt-text hash match → an unambiguous batch/SKU folder → otherwise **UNMATCHED** (the file is copied to the quarantine bucket).
-- **Today, Creative Studio images arrive UNMATCHED**, because GCC keeps the prompt in its database, not on the file. An operator links them with `cap image link <GEN-id> <PR-id>` (we did this in the test). **Planned:** the router reads GCC's `media_items` row for the file (prompt, user, model) and links automatically.
+- **Creative Studio lookup:** the router reads GCC's own database (Cloud SQL, table `media_items`) for the row whose `gcs_uris` contains this file. GCC fills that column a moment after the upload, so the router waits up to `link_wait_seconds` (90 s). The row gives:
+  - the prompt **as the user typed it** (`original_prompt`, recorded before any GCC enhancement or brand-guideline text is added)
+  - the real **user** (`user_email`) and **model**
+  - the **workspace** (for its brand guideline)
+- It links the image to a Prompt ID, in order:
+  1. hash of GCC's `original_prompt` = hash of an enriched prompt (`GCC_PROMPT_HASH`)
+  2. a Prompt ID in the path/metadata
+  3. a prompt hash in object metadata
+  4. an unambiguous batch/SKU folder
+  5. otherwise **UNMATCHED** (copied to quarantine, and GCC's gallery gets a note saying it isn't linked)
+- An operator can still link by hand: `cap image link <GEN-id> <PR-id>`. This runs **in the router**, because Creative Studio's database isn't reachable from laptops behind corporate TLS inspection. `--local` runs it locally without the GCC context.
+- Database access: Cloud SQL Python Connector as GCC's DB user (`studio_user`), password from GCC's Secret Manager secret `creative-studio-db-password`. The router's service account has `roles/cloudsql.client` and read access to that secret. All GCC database calls are best-effort: if the database is unreachable, lineage and scoring still happen (the image just stays UNMATCHED).
 
 ### Step 4: Register the image (`Pipeline.register_image`, `cap/pipeline.py`)
 - Assigns a **Generation ID** (`GEN-…`) and version 1. A revision of an existing image keeps the GEN ID and gets version n+1.
@@ -68,7 +78,7 @@ Test: batch `BR-20260927-DWT-001`, prompts `PR-01M3HVBQ…` (variant 1) and `PR-
   - the image
   - the generation prompt
   - the negative and safety constraints
-  - the brand/safety **skills** (`skills/*.md`)
+  - the **brand guideline Creative Studio extracted from the brand PDF** (colour palette, visual style, tone, guideline text; the latest completed one for the image's workspace, else a global one), plus the brand/safety **skills** (`skills/*.md`) as additional rules. Without a GCC guideline, the skills alone are used. BigQuery `score.raw.brand_source` records which (`gcc_brand_guideline:<id>` or `skills`)
   - up to 4 **reference product images** (when the SKU has them)
 - It asks for a 0–1 score on the four SOW 3.4.5 dimensions (with notes), a 0–100 hallucination risk, and a rationale, as structured JSON.
 - The composite is a weighted average (`scoring.weights`: 0.35 / 0.35 / 0.20 / 0.10).
@@ -84,7 +94,7 @@ Test: batch `BR-20260927-DWT-001`, prompts `PR-01M3HVBQ…` (variant 1) and `PR-
 | < 65 | `FAILED_QC` (default) or `FLAGGED` | Copied to `gs://…-rejected/…` (FAIL) or held for mandatory review (FLAG) |
 | HIGH hallucination risk (> 60) | `FLAGGED` | Never auto-approved, even at ≥ 85 |
 
-Each decision writes a `disposition` row (append-only; the latest row is the current status). A final decision also writes an **audit package** (all versions, prompts, scores, edits, dispositions) to `gs://…-audit/…/audit-<timestamp>.json` (write-once bucket).
+Each decision writes a `disposition` row (append-only; the latest row is the current status). For Creative Studio images, the router also **writes the score into GCC's `media_items.critique`**, so it appears in the "Critique" box of the image's detail view in the Creative Studio gallery: score, verdict, sub-scores, rationale and the IDs. `cap gcc writeback <GEN-id…>` backfills or re-syncs it. A final decision also writes an **audit package** (all versions, prompts, scores, edits, dispositions) to `gs://…-audit/…/audit-<timestamp>.json` (write-once bucket).
 
 Test results:
 
@@ -147,6 +157,8 @@ Per source:
 Next build step: `cap ingest` plus a first connector (a manual/CSV drop first, so SBD can hand over the 25 pilot SKUs and images before API access is granted), then Salsify, then Bynder.
 
 ### Q3. How do we get a score from GCC? The screen shows only the image.
+**Update:** since router commit `9fdda37`, our score is written into GCC's `critique` field, so it now shows in the Creative Studio gallery (open an image → detail view → "Critique"). The original answer follows.
+
 **We don't. The scores come from our pipeline's own critic, not from Creative Studio.** Checked in the GCC `develop` code: its `media_items` table has a `critique` column, and the gallery's detail view shows a "Critique" box **if** that column is filled, but **no backend code fills it**. The "Gemini multimodal critic" described in the SOW isn't in this GCC version (an unmerged branch, `feature/brand-guidline-enforcement-eval`, may add it).
 
 So the router scores every image with Gemini 2.5 Pro using the SOW 3.4.5 rubric and weights (Step 5). That's why nothing appears on the Creative Studio screen. To show scores to Creative Studio users, the options are:
@@ -176,6 +188,18 @@ Do we tell the prompt? **Yes, but by attaching the images, with the prompt text 
 - **Manual mode:** the copy block lists them and the user attaches them in Creative Studio's reference-image upload.
 - **Critic:** it gets the product references today. With the addition it also gets the gold standard, with instructions to judge product accuracy against the product reference and style against the gold standard. This is what makes the score strict. (The 100/100 in the test was possible only because the critic had nothing real to compare against.)
 
+### Q6. If we enable brand guidelines in Creative Studio, will it give a score?
+**No, it changes generation, not judging.** In GCC `develop`:
+- Uploading a brand PDF to a workspace makes Gemini extract the colour palette, tone of voice, visual style summary and guideline text into GCC's `brand_guidelines` table.
+- At generation time, the switch `use_brand_guidelines` (default off) **prepends those guidelines to the prompt**, steering the image toward the brand. Nothing scores the result.
+- The unmerged branch `feature/brand-guidline-enforcement-eval` (Feb 2026) adds `backend/src/evaluation/brand_evaluator.py`: Gemini scores an image 0–100 against the guidelines, with per-guideline pass/fail. It runs as a command-line test harness over a golden dataset (`run_evaluation.py`), **not** as a product feature in the UI or API.
+
+What we do instead:
+1. **Enable brand guidelines in Creative Studio anyway:** upload the SBD/DEWALT guideline PDF to the workspace and turn on "use brand guidelines". Better images, and lineage still matches, because the router hashes `original_prompt` (the typed prompt, before the prepend).
+2. **One source of brand truth:** our critic reads the guideline GCC extracted from that PDF (Step 5), so generation and scoring use the same rules. `skills/brand.md` becomes a fallback and home for extra rules. Config: `creative_studio.use_gcc_brand_guidelines`.
+3. **Scores visible in Creative Studio:** written to `media_items.critique` (Step 6). Config: `creative_studio.writeback_critique`.
+4. Ideas to borrow from Google's branch later: a per-guideline pass/fail checklist in our critic output, and a golden-dataset calibration run for SBD's threshold sign-off (SOW acceptance 3.a–3.c).
+
 ## 5. Built vs. not built yet
 
 | Area | Status |
@@ -183,8 +207,9 @@ Do we tell the prompt? **Yes, but by attaching the images, with the prompt text 
 | Prompt agent, prompt versioning, batch IDs | Built, tested live |
 | Creative Studio (GCC) install, cost controls (scale-to-zero, DB auto-start/stop) | Built, tested live |
 | Router: Eventarc pickup, thumbnail skip, registration, scoring, routing, audit | Built, tested live |
-| Automatic linking of GCC images (read GCC `media_items`) | **Next**: images arrive UNMATCHED today |
-| Score shown inside Creative Studio (write `media_items.critique`) | Proposed (Q3) |
+| Automatic linking of GCC images (read GCC `media_items`), real user/model | Built (`9fdda37`); DB access verified live, auto-link to be confirmed on the next generated image |
+| Score shown inside Creative Studio (write `media_items.critique`) | Built; verified live (3 images backfilled) |
+| Critic uses GCC's PDF-extracted brand guideline | Built; active once a brand PDF is uploaded in GCC |
 | Ingestion connectors (Salsify, Bynder, documents) → landing zone | **Not built** (Q2) |
 | Real SKU data and reference images for the 25 pilot SKUs | Waiting on SBD / ingestion |
 | Gold-standard exemplars in prompts and critic | Proposed (Q5) |

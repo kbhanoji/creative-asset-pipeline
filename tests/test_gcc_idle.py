@@ -25,19 +25,25 @@ class R:
     def json(self):
         return self.body
 
+    status_code = 200
+
 
 def session(policy, points):
     s = MagicMock()
     instances = {"items": [{"name": "other-db"},
                            {"name": "creative-studio-db-ab12", "settings": {"activationPolicy": policy}}]}
     series = {"timeSeries": [{"points": [{"value": {"int64Value": str(p)}} for p in points]}]} if points else {}
-    s.get.side_effect = lambda url, timeout, params=None: R(series if "timeSeries" in url else instances)
+    ops = {"items": [{"status": "DONE", "startTime": "2020-01-01T00:00:00Z"}]}    # long ago
+    s.get.side_effect = lambda url, timeout, params=None: R(
+        series if "timeSeries" in url else ops if "/operations" in url else instances)
     s.patch.return_value = R({"name": "op"})
     return s
 
 
 def test_idle_rule():
     assert gcc_idle.idle_decision("ALWAYS", 0, 30)[0]
+    assert not gcc_idle.idle_decision("ALWAYS", 0, 30, minutes_since_change=5)[0]      # just woken
+    assert gcc_idle.idle_decision("ALWAYS", 0, 30, minutes_since_change=45)[0]
     assert not gcc_idle.idle_decision("ALWAYS", 3, 30)[0]
     assert not gcc_idle.idle_decision("NEVER", 0, 30)[0]
 
