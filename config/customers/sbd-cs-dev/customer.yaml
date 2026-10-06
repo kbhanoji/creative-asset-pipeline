@@ -208,7 +208,7 @@ creative_studio:
     prod: main
   repo_ref: ""                        # optional override: branch, tag or commit SHA (pin a commit for prod, TDD ADR-10)
   gcc_environment: development        # GCC tfvars `environment`; names the media bucket <project>-cs-<this>-bucket
-  gcc_env_folder: dev-infra           # GCC folder infra/environments/<name> (bootstrap.sh "environment name")
+  gcc_env_folder: dev-hcl             # GCC folder infra/environments/<name>; not dev-infra, which holds the old personal project's install state
   output_bucket: ""                   # blank = <project_id>-cs-<gcc_environment>-bucket (GCC's media bucket)
   backend_service: cstudio-be         # GCC Cloud Run service names, as set by bootstrap.sh in
   frontend_service: cstudio-fe        # code/gcc-creative-studio/infra/environments/dev-infra/dev-infra.tfvars
