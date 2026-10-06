@@ -1,0 +1,270 @@
+# =============================================================================
+# Creative Asset Pipeline: SBD / DEWALT (HCL team dev sandbox run by a team member)
+# Set these before running the installer (e.g. `source ~/sbd.env`):
+#   CAP_ADMIN_EMAIL  CAP_PROJECT_ID  CAP_BILLING_ACCOUNT  CAP_FORK_URL
+# A missing value makes `cap validate` fail, so nothing is created by mistake.
+# Source: SBD_SOW_Sep9_V5 (3.2, 3.4.5, A2) and SBD_Creative_Studio_TDD_v0.2 (5, 6, 9.3).
+# Moving to SBD's tenant: set create_project=false, project_id=<SBD project>,
+# org/folder, real groups under access.users.
+# -----------------------------------------------------------------------------
+# Copy this file to config/customers/<customer-id>/customer.yaml, or run
+#   cap init --customer <customer-id>
+# which asks the questions interactively and writes the file for you.
+#
+# Everything customer-specific lives here: GCP account/project, users, SKUs,
+# models, thresholds, bucket names, Creative Studio settings. The code and the
+# Terraform never hard-code a customer value, so onboarding a new customer is:
+#   1) new customer.yaml + skus.csv + brand skills
+#   2) cap validate  ->  cap infra apply  ->  cap deploy all
+#
+# Values of the form ${ENV_VAR} are read from the environment at load time
+# (use this for anything you don't want committed, e.g. billing account).
+# =============================================================================
+
+customer:
+  id: sbd                       # short slug used in resource names
+  name: "Stanley Black & Decker"
+  brand: "DEWALT"
+  brand_code: DWT               # BR-20261005-DWT-001
+  region_market: NA             # market/region for regional prompt variants
+  language: en-US
+
+environment: dev                # dev | uat | prod (suffixes names, selects defaults)
+
+# -----------------------------------------------------------------------------
+# Google Cloud account, project and location
+# -----------------------------------------------------------------------------
+gcp:
+  admin_account: "${CAP_ADMIN_EMAIL}"     # Google account that runs Terraform/CLI (gcloud auth login)
+  create_project: true                 # true = create the project; false = use an existing one (e.g. customer landing zone)
+  project_id: "${CAP_PROJECT_ID}"        # globally unique, 6-30 chars
+  project_name: "SBD Creative Studio Dev (HCL team)"
+  billing_account: "${CAP_BILLING_ACCOUNT}"  # XXXXXX-XXXXXX-XXXXXX (only needed when create_project=true)
+  org_id: ""                           # set ONE of org_id / folder_id when the account belongs to an org
+  folder_id: ""
+  region: us-central1                  # Cloud Run, VM, Agent Engine, Vertex AI calls
+  zone: us-central1-a                  # Creative Studio VM
+  bigquery_location: US
+  labels:
+    app: creative-asset-pipeline
+    customer: sbd
+
+# -----------------------------------------------------------------------------
+# People and access. Personas map to IAM roles (project-level unless noted).
+# Add users here; `cap infra apply` grants them. Use group:xyz@domain for groups.
+# -----------------------------------------------------------------------------
+access:
+  users:
+    - member: "user:${CAP_ADMIN_EMAIL}"
+      personas: [platform_admin]
+    - member: "user:sbdcap1@gmail.com"          # Bhanoji's sandbox account
+      personas: [developer]
+    # HCL development team. Each address must be a Google account (Workspace or a Google account
+    # created for the work email); IAM rejects addresses that aren't. Owner can't be granted by API
+    # on a project without an organization, so the team gets `developer` (Editor plus admin roles).
+    # Commented entries: uncomment once the address is a Google account, then `cap infra apply`.
+    - member: "user:bhanoji.kandalam@hcl-software.com"
+      personas: [developer]
+    # - member: "user:dinesh.mishra@hcltech.com"
+    #   personas: [developer]
+    # - member: "user:nitesh_tiwari@hcltech.com"
+    #   personas: [developer]
+    # - member: "user:praveen.joe@hcltech.com"
+    #   personas: [developer]
+    # - member: "user:pratibhasi@hcltech.com"
+    #   personas: [developer]
+    # - member: "user:subrahmanyam.kethe@hcltech.com"
+    #   personas: [developer]
+  personas:
+    platform_admin:
+      - roles/owner
+    developer:                         # DEV ONLY: Creative Studio, deploy/run ADK agents, BigQuery edits, reports
+      - roles/editor                   # Cloud Run, Cloud Build, Vertex AI, BigQuery data, GCS objects, logs
+      - roles/resourcemanager.projectIamAdmin   # cap deploy grants IAM bindings
+      - roles/iam.serviceAccountUser   # deploy services as sa-prompt-agent / sa-lineage-router
+      - roles/run.admin                # deploy and invoke Cloud Run (cap deploy, cap agent open)
+      - roles/storage.admin            # bucket IAM set by cap deploy router
+      - roles/bigquery.admin           # tables, views, dataset access, reports
+      - roles/secretmanager.admin      # secrets used by Creative Studio and the router
+      - roles/aiplatform.user          # Gemini, image models, Agent Engine
+      - roles/discoveryengine.admin    # Gemini Enterprise app and agent registration
+    creative_user:                     # uses prompt agent + Creative Studio, generates images
+      - roles/discoveryengine.user
+      - roles/aiplatform.user
+      - roles/iap.tunnelResourceAccessor
+      - roles/storage.objectViewer
+      - roles/run.invoker              # open the private prompt agent (cap agent open)
+    reviewer:                          # HITL: revises prompts, approves/rejects
+      - roles/discoveryengine.user
+      - roles/aiplatform.user
+      - roles/iap.tunnelResourceAccessor
+      - roles/storage.objectViewer
+      - roles/bigquery.jobUser
+      - roles/run.invoker              # open the private prompt agent (cap agent open)
+    auditor:                           # read-only lineage and reports
+      - roles/bigquery.dataViewer
+      - roles/bigquery.jobUser
+
+# -----------------------------------------------------------------------------
+# Storage. Final bucket name = "<bucket_prefix>-<purpose>".
+# -----------------------------------------------------------------------------
+storage:
+  bucket_prefix: "${CAP_PROJECT_ID}"         # must be globally unique-ish; defaults to <customer.id>-cs-<env>
+  landing_retention_days: 180
+  quarantine_retention_days: 90
+  lock_audit_retention: false          # true in prod after UAT: audit bucket becomes WORM
+  audit_retention_days: 2555           # ~7 years
+  # purposes created (don't remove; you may rename via bucket_names below):
+  #   landing, config, prompts, intermediate, approved, rejected, quarantine, audit, backgrounds, assetgroups, creative-studio
+  container_images_keep: 5            # Artifact Registry: keep the 5 most recent images (older than 1 day deleted); 0 = keep all
+  bucket_names: {}                     # optional overrides, e.g. {approved: "sbd-final-assets"}
+  path_pattern: "{brand}/{category}/{subcategory}/{sku}/{batch_run_id}/{entity_id}/v{version}/{file}"
+  file_pattern: "{sku}_{shot_type}_{aspect}_{resolution}_v{version}.{ext}"
+
+bigquery:
+  dataset: "sbd_cs_lineage"
+
+# -----------------------------------------------------------------------------
+# Models (Vertex AI / Gemini Enterprise Agent Platform). Verify against the
+# models available in your region at build time; record changes in the runbook.
+# -----------------------------------------------------------------------------
+models:
+  prompt_agent: gemini-2.5-flash
+  image_generation: gemini-3-pro-image-preview   # "Nano Banana Pro": 1K/2K/4K, multi-reference
+  critic: gemini-2.5-pro
+  model_location: global                         # 'global' or a region for the genai client
+
+# -----------------------------------------------------------------------------
+# Generation step (the step between the prompt agent and scoring)
+#   manual    = DEFAULT. Agent returns the prompt; the user copies it into
+#               Creative Studio and generates there. The lineage router picks
+#               up the output from the creative-studio bucket.
+#   automatic = the pipeline calls the image model directly with the prompt,
+#               writes the outputs to the intermediate bucket and scores them.
+# -----------------------------------------------------------------------------
+generation:
+  mode: manual                        # manual | automatic
+  variants_per_prompt: 4              # SOW A2: up to 4 controlled variants per base image
+  base_images_per_sku: 6              # SOW A2: up to 6 base images per SKU
+  max_assets_total: 750               # hard ceiling across the engagement (SOW A2)
+  default_resolution: 2K              # 1K | 2K | 4K
+  default_aspect_ratio: "1:1"
+  allowed_aspect_ratios: ["1:1", "16:9", "9:16", "4:5", "4:3", "3:4"]
+  output_mime_type: image/png
+
+# -----------------------------------------------------------------------------
+# Scoring and routing (SOW 3.4.5 / TDD 9.3). All numbers are 0-100.
+# -----------------------------------------------------------------------------
+scoring:
+  provider: gemini_critic             # gemini_critic (built-in, same rubric) | gcc_endpoint (Creative Studio critic API)
+  gcc_endpoint_url: ""                # e.g. http://<vm-ip>:8080/api/critic/score (only for gcc_endpoint)
+  weights:                            # must sum to 1.0
+    prompt_adherence: 0.35
+    brand_compliance: 0.35
+    artifact_freedom: 0.20
+    safety_and_constraints: 0.10
+  thresholds:
+    auto_approve_min: 85              # composite >= 85  -> APPROVED (auto)
+    revision_min: 65                  # 65 <= composite < 85 -> NEEDS_REVISION (human edits prompt + regenerates)
+    below_revision_action: FAIL       # composite < 65 -> FAIL (REJECTED / FAILED_QC) | FLAG_FOR_HITL
+    hallucination_high: 60            # risk > 60  -> HIGH
+    hallucination_medium: 30          # risk > 30  -> MEDIUM, else LOW
+    high_hallucination_blocks_auto_approve: true   # safety-first: HIGH risk is never auto-approved
+  hitl:
+    edit_notice_at: 10                # informational notice after N human revisions of one image (never blocks)
+
+# -----------------------------------------------------------------------------
+# Product catalog. SKUs live in a CSV so a customer can hand you a spreadsheet.
+# Columns: sku,parent_asset_id,product_name,category,subcategory,key_features,reference_images
+#   key_features and reference_images are '|' separated.
+# -----------------------------------------------------------------------------
+catalog:
+  skus_file: skus.csv                 # relative to this YAML
+  shot_types: [hero, lifestyle, in_use, detail, packaging]
+  asset_types: [base_image, ecommerce_graphic, sales_literature, fb_video, background]
+
+brand:
+  skills_dir: skills                  # relative to this YAML; *.md loaded into the prompt agent
+  guidelines_files: []                # PDFs uploaded to the config bucket + Creative Studio brand ingestion
+  negative_constraints:
+    - competitor branding
+    - distorted or deformed product features
+    - illegible or invented labels and text
+  safety_constraints:
+    - correct PPE shown when a tool is in use
+    - guards in place, safe hand positions
+
+# -----------------------------------------------------------------------------
+# Google Creative Studio (GCC) on a Compute Engine VM
+# -----------------------------------------------------------------------------
+creative_studio:
+  # cloud_run = Google's GCC deployment (Cloud Run + Firebase Hosting + Cloud SQL) installed with the
+  #             repo's bootstrap.sh into this project (recommended; see README "Creative Studio").
+  # vm        = GCC in Docker on a VM created by this Terraform. none = no Creative Studio.
+  deployment: cloud_run
+  # Source code: Google's repo, or YOUR fork (bootstrap.sh and GCC's Cloud Build deploy from the fork).
+  # When forking on GitHub, untick "Copy the main branch only" so develop/test exist in the fork.
+  repo_url: https://github.com/GoogleCloudPlatform/gcc-creative-studio
+  fork_url: "${CAP_FORK_URL}"
+  # GCC branch per environment: develop for development, test for UAT, main for enterprise/prod.
+  branch_by_environment:
+    dev: developlocal                 # develop + scale-to-zero backend + DB autostart (see DEVELOPLOCAL.md in the fork)
+    uat: test
+    prod: main
+  repo_ref: ""                        # optional override: branch, tag or commit SHA (pin a commit for prod, TDD ADR-10)
+  gcc_environment: development        # GCC tfvars `environment`; names the media bucket <project>-cs-<this>-bucket
+  gcc_env_folder: dev-infra           # GCC folder infra/environments/<name> (bootstrap.sh "environment name")
+  output_bucket: ""                   # blank = <project_id>-cs-<gcc_environment>-bucket (GCC's media bucket)
+  backend_service: cstudio-be         # GCC Cloud Run service names, as set by bootstrap.sh in
+  frontend_service: cstudio-fe        # code/gcc-creative-studio/infra/environments/dev-infra/dev-infra.tfvars
+  sql_instance_prefix: creative-studio-db
+  # DEVELOPMENT ONLY: stop GCC's Cloud SQL database on a schedule so you don't pay for it overnight.
+  # Apply with `cap gcc schedule` after GCC is installed; `cap gcc schedule --remove` to delete.
+  auto_schedule:
+    enabled: false                    # no automatic stop: use `cap gcc sleep` / `cap gcc wake`
+    stop_time: "17:00"                # 5 pm, 24h clock
+    stop_days: [mon, tue, wed, thu, fri, sat, sun]
+    start_time: ""                    # e.g. "08:00" to auto-start; blank = start with `cap gcc wake`
+    start_days: [mon, tue, wed, thu, fri]
+    timezone: ""                      # blank = local time of gcp.region (us-central1 -> America/Chicago)
+    idle_stop_minutes: 30             # also stop after 30 min without GCC backend requests; 0 = off
+    idle_check_every_minutes: 15      # how often the idle check runs
+  # ---- vm deployment only ----
+  enabled: true
+  machine_type: e2-standard-8
+  boot_disk_gb: 100
+  image_family: debian-12
+  image_project: debian-cloud
+  public_ip: false                    # false = access through IAP tunnel only (recommended)
+  install_command: "./scripts/install.sh || docker compose up -d"   # validate against the pinned repo README
+  ports: [22, 8080]                   # opened to Google's IAP range only; UI reached via `cap gcc tunnel`
+  # How the lineage router links a Creative Studio image back to a Prompt ID (TDD 6.4):
+  prompt_metadata_key: "prompt"       # GCS object metadata key holding the generation prompt, if GCC writes it
+  user_metadata_key: "user_email"     # GCS object metadata key holding the Creative Studio user (validate in spike)
+  folder_pattern: "{batch_run_id}/{sku}/"
+
+# -----------------------------------------------------------------------------
+# Where the prompt agent runs and how users reach it
+#   local             = DEVELOPMENT, no hosting cost. `cap agent web` runs the ADK dev UI
+#                       on your machine (http://localhost:8000); `cap agent chat` in the terminal.
+#                       Only Gemini model tokens + BigQuery/GCS usage are billed to the project.
+#   cloud_run         = ADK web UI on Cloud Run, private, scales to zero (pay only while used).
+#                       Open it with `cap agent open` (authenticated proxy to localhost).
+#   agent_engine      = deployed to Vertex AI Agent Engine (pay per use, monthly free tier);
+#                       used through `cap agent chat` or the Agent Engine API. No Gemini Enterprise needed.
+#   gemini_enterprise = agent_engine + registered in the customer's Gemini Enterprise app, so licensed
+#                       users chat with it in Gemini Enterprise (needs GE seats; customer environments).
+# The tools, lineage and BigQuery records are identical in all three.
+# -----------------------------------------------------------------------------
+agent_runtime: cloud_run           # personal dev account: no Gemini Enterprise; `local` also works
+
+agent:
+  display_name: "SBD DEWALT Prompt Enrichment Agent"
+  description: "Turns a short base prompt into brand-compliant, versioned image prompts with lineage IDs."
+  agent_engine_location: us-central1  # agent_engine / gemini_enterprise only
+  staging_bucket_purpose: config      # bucket that stages the Agent Engine package
+
+# Only used when agent_runtime = gemini_enterprise
+gemini_enterprise:
+  app_id: ""                          # Gemini Enterprise app (engine) ID from the console
+  location: global                    # global | us | eu
